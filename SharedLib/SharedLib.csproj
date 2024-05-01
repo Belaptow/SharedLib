@@ -2,6 +2,11 @@
 
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0;net6.0;net8.0</TargetFrameworks>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <Title>Shared components library</Title>
+    <Description>Library of shared components</Description>
+    <RepositoryUrl>https://github.com/Belaptow/SharedLib</RepositoryUrl>
+    <PackageOutputPath>\\server1\D\NetworkFolder\PublishedProjects\wwwroot\NuGetServer\Packages</PackageOutputPath>
   </PropertyGroup>
 
 </Project>
