@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace SharedLib
@@ -32,7 +33,7 @@ namespace SharedLib
                 taskCreator = Task.Run;
 
             degreeOfParallelism = Math.Min(degreeOfParallelism, entries);
-            Task.WaitAll(Task.WhenAll(Partitioner.Create(source).GetPartitions(degreeOfParallelism).Select(partition => taskCreator(async () => { using (partition) while (partition.MoveNext()) await wrapper(partition.Current).ConfigureAwait(continueOnCapturedContext: false); }))));
+            Task.WhenAll(Partitioner.Create(source).GetPartitions(degreeOfParallelism).Select(partition => taskCreator(async () => { using (partition) while (partition.MoveNext()) await wrapper(partition.Current).ConfigureAwait(continueOnCapturedContext: false); }))).Wait();
         }
         public static Task RunSupressFlow(Func<Task> func)
         {
