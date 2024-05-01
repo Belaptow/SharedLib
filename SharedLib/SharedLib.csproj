@@ -7,6 +7,8 @@
     <Description>Library of shared components</Description>
     <RepositoryUrl>https://github.com/Belaptow/SharedLib</RepositoryUrl>
     <PackageOutputPath>\\server1\D\NetworkFolder\PublishedProjects\wwwroot\NuGetServer\Packages</PackageOutputPath>
+    <PackageId>BLPTW.$(AssemblyName)</PackageId>
+    <Authors>belaptow</Authors>
   </PropertyGroup>
 
 </Project>
