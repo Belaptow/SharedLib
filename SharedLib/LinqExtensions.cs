@@ -149,6 +149,13 @@ namespace SharedLib
         {
             return (new LoosePageSplitter<TSource>(source, selector)).Paginate();
         }
+        public static IEnumerable<IList<TSource>> SplitPagesLooselyEqual<TSource>(
+            this IEnumerable<TSource> source,
+            Func<TSource, double> selector,
+            double deviation)
+        {
+            return (new LoosePageSplitter<TSource>(source, selector, deviation)).Paginate();
+        }
         /// <summary>
         /// Take from enumerable while aggregation satisfies condition
         /// </summary>

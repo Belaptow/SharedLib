@@ -9,62 +9,90 @@ namespace SharedLib
 {
     public static class LoosePageSplitterExtension
     {
-        public static void AddToMin<TSource>(this List<List<Tuple<TSource, double>>> tableEntry, Tuple<TSource, double> val)
+        public static void AddToMin<TSource>(this List<List<EntryWrapper<TSource>>> tableEntry, EntryWrapper<TSource> val)
         {
-            tableEntry.SelectMin(page => page.Sum(tuple => tuple.Item2)).Add(val);
+            tableEntry.SelectMin(page => page.Sum(entry => entry.Value)).Add(val);
         }
     }
     public class LoosePageSplitter<TSource>
     {
+        int count;
+        double roungDeviationUpTo;
         IEnumerable<TSource> source;
         Func<TSource, double> selector;
-        ReadOnlyCollection<Tuple<TSource, double>> map;
+        ReadOnlyCollection<EntryWrapper<TSource>> map;
         double Max;
         double Min;
-        ConcurrentDictionary<int, Tuple<double, List<List<Tuple<TSource, double>>>>> deviationTable;
-        public LoosePageSplitter(IEnumerable<TSource> source, Func<TSource, double> selector)
+        ConcurrentDictionary<int, PagesWrapper<TSource>> deviationTable;
+        public LoosePageSplitter(IEnumerable<TSource> source, Func<TSource, double> selector) : this(source, selector, 0.01) { }
+        public LoosePageSplitter(IEnumerable<TSource> source, Func<TSource, double> selector, double roungDeviationUpTo)
         {
             this.source = source;
             this.selector = selector;
-            map = new ReadOnlyCollection<Tuple<TSource, double>>(source.Select((entry) =>  new Tuple<TSource, double>(entry, selector(entry))).OrderByDescending(tuple => tuple.Item2).ToList());
-            Max = map.Max(tuple => tuple.Item2);
-            Min = map.Max(tuple => tuple.Item2);
-            deviationTable = new ConcurrentDictionary<int, Tuple<double, List<List<Tuple<TSource, double>>>>>();
-            //distinctEntries = map.Values.Select(tuple => tuple.Item2).Distinct().OrderBy(x => x);
+            this.count = source.Count();
+            map = new ReadOnlyCollection<EntryWrapper<TSource>>(source.Select((entry) => new EntryWrapper<TSource>(entry, selector(entry))).OrderByDescending(entry => entry.Value).ToList());
+            Max = map.Max(entry => entry.Value);
+            Min = map.Max(entry => entry.Value);
+            deviationTable = new ConcurrentDictionary<int, PagesWrapper<TSource>>();
+            this.roungDeviationUpTo = roungDeviationUpTo;
         }
         public IEnumerable<IList<TSource>> Paginate()
         {
-            if (source.Count() < 2)
+            if (count < 2)
                 return new List<IList<TSource>>() { source.ToList() };
 
-            Enumerable.Range(2, source.Count())
+            Enumerable.Range(2, count)
                 .ForEachAsync(AddTableEntry);
             deviationTable.ForEach(LogKeyValuePair);
-            var minDeviation = deviationTable.Values.Min(tuple => tuple.Item1);
-            Console.WriteLine($"minDeviation {minDeviation}");
-            var result = deviationTable.Values.Where(tuple => Equals(tuple.Item1, minDeviation)).SelectMax(tuple => tuple.Item2.Count()).Item2.Select(page => page.Select(tuple => tuple.Item1).ToList());
-            Console.WriteLine($"RESULT pages {result.Count()} \n[{String.Join(",\n", result.Select(page => $"[{String.Join(", ", page)}]"))}]");
-            return result;
+
+            var bestRatio = deviationTable.Values.Max(page => page.Ratio);
+            var result = deviationTable.Values.Where(page => Equals(page.Ratio, bestRatio)).SelectMax(page => page.NumberOfPages);
+            return result.Pages.Select(page => page.Select(entry => entry.Entry).ToList());
         }
-        private void LogKeyValuePair(KeyValuePair<int, Tuple<double, List<List<Tuple<TSource, double>>>>> pair)
+        private void LogKeyValuePair(KeyValuePair<int, PagesWrapper<TSource>> pair)
         {
-            Console.WriteLine($"Number of pages {pair.Key}. Deviation {pair.Value.Item1}.\n[{String.Join("\n", pair.Value.Item2.Select(page => $"SUM({page.Sum(tuple => tuple.Item2)})[{String.Join(", ", page.Select(tuple => tuple.Item2))}]"))}]\n");
+            var sums = pair.Value.Pages.Select(page => page.Sum(entry => entry.Value));
         }
         protected void AddTableEntry(int numOfPages)
         {
             deviationTable.TryAdd(numOfPages, GetPageEntry(numOfPages));
         }
-        protected Tuple<double, List<List<Tuple<TSource, double>>>> GetPageEntry(int numOfPages) 
+        protected PagesWrapper<TSource> GetPageEntry(int numOfPages)
         {
-            var starter = map.Take(numOfPages).Select(tuple => new List<Tuple<TSource, double>>() { tuple }).ToList();
+            var starter = map.Take(numOfPages).Select(entry => new List<EntryWrapper<TSource>>() { entry }).ToList();
             map.Skip(numOfPages).ForEach(mapped => starter.AddToMin(mapped));
-            return new Tuple<double, List<List<Tuple<TSource, double>>>>(CalculateDeviation(starter), starter);
+            return new PagesWrapper<TSource>(numOfPages, CalculateDeviation(starter), starter);//new Tuple<double, List<List<Tuple<TSource, double>>>>(CalculateDeviation(starter), starter);
         }
 
-        protected double CalculateDeviation(List<List<Tuple<TSource, double>>> tableEntry)
+        protected double CalculateDeviation(List<List<EntryWrapper<TSource>>> tableEntry)
         {
-            var sums = tableEntry.Select(page => page.Sum(tuple => tuple.Item2));
-            return sums.Max() - sums.Min();
+            var sums = tableEntry.Select(page => page.Sum(tuple => tuple.Value));
+            var deviation = sums.Max() - sums.Min();
+            return deviation < roungDeviationUpTo ? roungDeviationUpTo : deviation;
+        }
+    }
+    public class EntryWrapper<TSource>
+    {
+        public TSource Entry { get; }
+        public double Value { get; }
+        public EntryWrapper(TSource entry, double val)
+        {
+            Entry = entry;
+            Value = val;
+        }
+    }
+    public class PagesWrapper<TSource>
+    {
+        public int NumberOfPages { get; }
+        public double Deviation { get; }
+        public double Ratio { get; }
+        public List<List<EntryWrapper<TSource>>> Pages { get; }
+        public PagesWrapper(int numberOfPages, double deviation, List<List<EntryWrapper<TSource>>> pages)
+        {
+            NumberOfPages = numberOfPages;
+            Deviation = deviation;
+            Pages = pages;
+            Ratio = numberOfPages / deviation;
         }
     }
 }
