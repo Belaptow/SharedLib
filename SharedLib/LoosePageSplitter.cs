@@ -17,6 +17,7 @@ namespace SharedLib
     public class LoosePageSplitter<TSource>
     {
         int count;
+        int maxPages;
         double roungDeviationUpTo;
         IEnumerable<TSource> source;
         Func<TSource, double> selector;
@@ -24,8 +25,7 @@ namespace SharedLib
         double Max;
         double Min;
         ConcurrentDictionary<int, PagesWrapper<TSource>> deviationTable;
-        public LoosePageSplitter(IEnumerable<TSource> source, Func<TSource, double> selector) : this(source, selector, 0.01) { }
-        public LoosePageSplitter(IEnumerable<TSource> source, Func<TSource, double> selector, double roungDeviationUpTo)
+        public LoosePageSplitter(IEnumerable<TSource> source, Func<TSource, double> selector, double roungDeviationUpTo, int maxPages)
         {
             this.source = source;
             this.selector = selector;
@@ -35,23 +35,19 @@ namespace SharedLib
             Min = map.Max(entry => entry.Value);
             deviationTable = new ConcurrentDictionary<int, PagesWrapper<TSource>>();
             this.roungDeviationUpTo = roungDeviationUpTo;
+            this.maxPages = maxPages;
         }
         public IEnumerable<IList<TSource>> Paginate()
         {
             if (count < 2)
                 return new List<IList<TSource>>() { source.ToList() };
 
-            Enumerable.Range(2, count)
+            Enumerable.Range(2, count > maxPages ? maxPages : count)
                 .ForEachAsync(AddTableEntry);
-            deviationTable.ForEach(LogKeyValuePair);
 
             var bestRatio = deviationTable.Values.Max(page => page.Ratio);
             var result = deviationTable.Values.Where(page => Equals(page.Ratio, bestRatio)).SelectMax(page => page.NumberOfPages);
             return result.Pages.Select(page => page.Select(entry => entry.Entry).ToList());
-        }
-        private void LogKeyValuePair(KeyValuePair<int, PagesWrapper<TSource>> pair)
-        {
-            var sums = pair.Value.Pages.Select(page => page.Sum(entry => entry.Value));
         }
         protected void AddTableEntry(int numOfPages)
         {
@@ -61,7 +57,7 @@ namespace SharedLib
         {
             var starter = map.Take(numOfPages).Select(entry => new List<EntryWrapper<TSource>>() { entry }).ToList();
             map.Skip(numOfPages).ForEach(mapped => starter.AddToMin(mapped));
-            return new PagesWrapper<TSource>(numOfPages, CalculateDeviation(starter), starter);//new Tuple<double, List<List<Tuple<TSource, double>>>>(CalculateDeviation(starter), starter);
+            return new PagesWrapper<TSource>(numOfPages, CalculateDeviation(starter), starter);
         }
 
         protected double CalculateDeviation(List<List<EntryWrapper<TSource>>> tableEntry)

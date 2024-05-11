@@ -143,18 +143,53 @@ namespace SharedLib
             }
             return result;
         }
+        /// <summary>
+        ///  Split enumerable into chunks of loosely equal weights
+        /// </summary>
+        /// <typeparam name="TSource">Type of elements in enumerable</typeparam>
+        /// <param name="source">Enumerable</param>
+        /// <param name="selector">Weight selector</param>
+        /// <returns>Paginated enumrable of sublists of roughly equal weights</returns>
         public static IEnumerable<IList<TSource>> SplitPagesLooselyEqual<TSource>(
             this IEnumerable<TSource> source,
             Func<TSource, double> selector)
         {
-            return (new LoosePageSplitter<TSource>(source, selector)).Paginate();
+            return source.SplitPagesLooselyEqual(selector, 0.1);
         }
+        /// <summary>
+        ///  Split enumerable into chunks of loosely equal weights
+        /// </summary>
+        /// <typeparam name="TSource">Type of elements in enumerable</typeparam>
+        /// <param name="source">Enumerable</param>
+        /// <param name="selector">Weight selector</param>
+        /// <param name="deviation">Minimal deviation of max-min from 0</param>
+        /// <returns>Paginated enumrable of sublists of roughly equal weights</returns>
+        /// <remarks>Higher deviation value - more bias towards number of pages</remarks>
         public static IEnumerable<IList<TSource>> SplitPagesLooselyEqual<TSource>(
             this IEnumerable<TSource> source,
             Func<TSource, double> selector,
             double deviation)
         {
-            return (new LoosePageSplitter<TSource>(source, selector, deviation)).Paginate();
+            return source.SplitPagesLooselyEqual(selector, deviation, 100);
+        }
+        /// <summary>
+        ///  Split enumerable into chunks of loosely equal weights
+        /// </summary>
+        /// <typeparam name="TSource">Type of elements in enumerable</typeparam>
+        /// <param name="source">Enumerable</param>
+        /// <param name="selector">Weight selector</param>
+        /// <param name="deviation">Minimal deviation of max-min from 0</param>
+        /// <param name="maxPages">Maximum amount of pages to split into</param>
+        /// <returns>Paginated enumrable of sublists of roughly equal weights</returns>
+        /// <remarks>Higher deviation value - more bias towards number of pages
+        /// Exponentially higher resources consumption with growth of maximum number of pages</remarks>
+        public static IEnumerable<IList<TSource>> SplitPagesLooselyEqual<TSource>(
+            this IEnumerable<TSource> source,
+            Func<TSource, double> selector,
+            double deviation,
+            int maxPages)
+        {
+            return (new LoosePageSplitter<TSource>(source, selector, deviation, maxPages)).Paginate();
         }
         /// <summary>
         /// Take from enumerable while aggregation satisfies condition
@@ -256,6 +291,7 @@ namespace SharedLib
         {
             return CreateHierarchy(allItems, default(TEntity), idProperty, parentIdProperty, 0);
         }
+        #region MoreLinq
         /// <summary>
         /// Returns the minimal element of the given sequence, based on
         /// the given projection.
@@ -398,5 +434,6 @@ namespace SharedLib
                 return max;
             }
         }
+        #endregion
     }
 }
