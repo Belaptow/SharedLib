@@ -111,23 +111,6 @@ namespace SharedLib
             }
         }
         /// <summary>
-        /// Split enumerable into parts of roughly equal weights based on provided selector
-        /// </summary>
-        /// <typeparam name="TSource">Type of elements in enumerable</typeparam>
-        /// <param name="source">Enumerable</param>
-        /// <param name="selector">Weight accumulator selector</param>
-        /// <returns>Enumerable of sublists of loosely equal weights. Outliers at the end</returns>
-        public static IEnumerable<IList<TSource>> SplitPagesLooselyEqual<TSource>(
-            this IEnumerable<TSource> source,
-            Func<TSource, double> selector)
-        {
-            var avg = source.Average(selector);
-            var sum = source.Sum(selector);
-            var limit = sum / avg;
-            source = source.OrderBy(selector);
-            return source.SplitPagesAggregate<TSource, double>(0, (acc, entry) => acc += selector(entry), (acc) => acc <= limit);
-        }
-        /// <summary>
         /// Split enumerable into sublists satisfying provided condition. Outliers not satisfying condition by themselves get returned in out param
         /// </summary>
         /// <typeparam name="TSource">Type of elements in enumerable</typeparam>
@@ -160,6 +143,12 @@ namespace SharedLib
             }
             return result;
         }
+        public static IEnumerable<IList<TSource>> SplitPagesLooselyEqual<TSource>(
+            this IEnumerable<TSource> source,
+            Func<TSource, double> selector)
+        {
+            return (new LoosePageSplitter<TSource>(source, selector)).Paginate();
+        }
         /// <summary>
         /// Take from enumerable while aggregation satisfies condition
         /// </summary>
@@ -181,13 +170,9 @@ namespace SharedLib
             {
                 accumulator = func(accumulator, item);
                 if (predicate(accumulator))
-                {
                     yield return item;
-                }
                 else
-                {
                     yield break;
-                }
             }
         }
         /// <summary>
@@ -236,6 +221,27 @@ namespace SharedLib
                     };
             }
         }
+        public static double Median<TColl>(
+            this IEnumerable<TColl> source,
+            Func<TColl, double> selector)
+        {
+            return source.Select<TColl, double>(selector).Median();
+        }
+
+        public static double Median(this IEnumerable<double> source)
+        {
+            int count = source.Count();
+            if (count == 0)
+                return 0;
+
+            source = source.OrderBy(n => n);
+
+            int midpoint = count / 2;
+            if (count % 2 == 0)
+                return (source.ElementAt(midpoint - 1) + source.ElementAt(midpoint)) / 2.0;
+            else
+                return source.ElementAt(midpoint);
+        }
         public static IEnumerable<HierarchyNode<TEntity>> AsHierarchy<TEntity, TProperty>(
             this IEnumerable<TEntity> allItems
             , Func<TEntity, TProperty> idProperty
@@ -243,6 +249,147 @@ namespace SharedLib
         {
             return CreateHierarchy(allItems, default(TEntity), idProperty, parentIdProperty, 0);
         }
+        /// <summary>
+        /// Returns the minimal element of the given sequence, based on
+        /// the given projection.
+        /// </summary>
+        /// <remarks>
+        /// If more than one element has the minimal projected value, the first
+        /// one encountered will be returned. This overload uses the default comparer
+        /// for the projected type. This operator uses immediate execution, but
+        /// only buffers a single result (the current minimal element).
+        /// </remarks>
+        /// <typeparam name="TSource">Type of the source sequence</typeparam>
+        /// <typeparam name="TKey">Type of the projected element</typeparam>
+        /// <param name="source">Source sequence</param>
+        /// <param name="selector">Selector to use to pick the results to compare</param>
+        /// <returns>The minimal element, according to the projection.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="source"/> or <paramref name="selector"/> is null</exception>
+        /// <exception cref="InvalidOperationException"><paramref name="source"/> is empty</exception>
 
+        public static TSource SelectMin<TSource, TKey>(this IEnumerable<TSource> source,
+            Func<TSource, TKey> selector)
+        {
+            return source.SelectMin(selector, null);
+        }
+
+        /// <summary>
+        /// Returns the minimal element of the given sequence, based on
+        /// the given projection and the specified comparer for projected values.
+        /// </summary>
+        /// <remarks>
+        /// If more than one element has the minimal projected value, the first
+        /// one encountered will be returned. This operator uses immediate execution, but
+        /// only buffers a single result (the current minimal element).
+        /// </remarks>
+        /// <typeparam name="TSource">Type of the source sequence</typeparam>
+        /// <typeparam name="TKey">Type of the projected element</typeparam>
+        /// <param name="source">Source sequence</param>
+        /// <param name="selector">Selector to use to pick the results to compare</param>
+        /// <param name="comparer">Comparer to use to compare projected values</param>
+        /// <returns>The minimal element, according to the projection.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="source"/>, <paramref name="selector"/> 
+        /// or <paramref name="comparer"/> is null</exception>
+        /// <exception cref="InvalidOperationException"><paramref name="source"/> is empty</exception>
+
+        public static TSource SelectMin<TSource, TKey>(this IEnumerable<TSource> source,
+            Func<TSource, TKey> selector, IComparer<TKey> comparer)
+        {
+            if (source == null) throw new ArgumentNullException("source");
+            if (selector == null) throw new ArgumentNullException("selector");
+            comparer = comparer ?? Comparer<TKey>.Default;
+
+            using (var sourceIterator = source.GetEnumerator())
+            {
+                if (!sourceIterator.MoveNext())
+                {
+                    throw new InvalidOperationException("Sequence contains no elements");
+                }
+                var min = sourceIterator.Current;
+                var minKey = selector(min);
+                while (sourceIterator.MoveNext())
+                {
+                    var candidate = sourceIterator.Current;
+                    var candidateProjected = selector(candidate);
+                    if (comparer.Compare(candidateProjected, minKey) < 0)
+                    {
+                        min = candidate;
+                        minKey = candidateProjected;
+                    }
+                }
+                return min;
+            }
+        }
+        /// <summary>
+        /// Returns the maximal element of the given sequence, based on
+        /// the given projection.
+        /// </summary>
+        /// <remarks>
+        /// If more than one element has the maximal projected value, the first
+        /// one encountered will be returned. This overload uses the default comparer
+        /// for the projected type. This operator uses immediate execution, but
+        /// only buffers a single result (the current maximal element).
+        /// </remarks>
+        /// <typeparam name="TSource">Type of the source sequence</typeparam>
+        /// <typeparam name="TKey">Type of the projected element</typeparam>
+        /// <param name="source">Source sequence</param>
+        /// <param name="selector">Selector to use to pick the results to compare</param>
+        /// <returns>The maximal element, according to the projection.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="source"/> or <paramref name="selector"/> is null</exception>
+        /// <exception cref="InvalidOperationException"><paramref name="source"/> is empty</exception>
+
+        public static TSource SelectMax<TSource, TKey>(this IEnumerable<TSource> source,
+            Func<TSource, TKey> selector)
+        {
+            return source.SelectMax(selector, null);
+        }
+
+        /// <summary>
+        /// Returns the maximal element of the given sequence, based on
+        /// the given projection and the specified comparer for projected values. 
+        /// </summary>
+        /// <remarks>
+        /// If more than one element has the maximal projected value, the first
+        /// one encountered will be returned. This operator uses immediate execution, but
+        /// only buffers a single result (the current maximal element).
+        /// </remarks>
+        /// <typeparam name="TSource">Type of the source sequence</typeparam>
+        /// <typeparam name="TKey">Type of the projected element</typeparam>
+        /// <param name="source">Source sequence</param>
+        /// <param name="selector">Selector to use to pick the results to compare</param>
+        /// <param name="comparer">Comparer to use to compare projected values</param>
+        /// <returns>The maximal element, according to the projection.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="source"/>, <paramref name="selector"/> 
+        /// or <paramref name="comparer"/> is null</exception>
+        /// <exception cref="InvalidOperationException"><paramref name="source"/> is empty</exception>
+
+        public static TSource SelectMax<TSource, TKey>(this IEnumerable<TSource> source,
+            Func<TSource, TKey> selector, IComparer<TKey> comparer)
+        {
+            if (source == null) throw new ArgumentNullException("source");
+            if (selector == null) throw new ArgumentNullException("selector");
+            comparer = comparer ?? Comparer<TKey>.Default;
+
+            using (var sourceIterator = source.GetEnumerator())
+            {
+                if (!sourceIterator.MoveNext())
+                {
+                    throw new InvalidOperationException("Sequence contains no elements");
+                }
+                var max = sourceIterator.Current;
+                var maxKey = selector(max);
+                while (sourceIterator.MoveNext())
+                {
+                    var candidate = sourceIterator.Current;
+                    var candidateProjected = selector(candidate);
+                    if (comparer.Compare(candidateProjected, maxKey) > 0)
+                    {
+                        max = candidate;
+                        maxKey = candidateProjected;
+                    }
+                }
+                return max;
+            }
+        }
     }
 }
